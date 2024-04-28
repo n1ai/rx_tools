@@ -94,6 +94,28 @@ char const *parse_fmt(char const *fmt)
 		return NULL;
 }
 
+
+#include <time.h>
+
+// Returns time in seconds since the last time this function was called
+double dt() {
+    static struct timespec t0;
+    static int first_call = 1;
+    struct timespec t1;
+    double dt;
+
+    if (first_call) {
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        first_call = 0;
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    dt = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    t0 = t1;
+
+    return dt;
+}
+
 #ifdef _WIN32
 BOOL WINAPI
 sighandler(int signum)
@@ -138,6 +160,7 @@ int main(int argc, char **argv)
 	char const *input_format = SOAPY_SDR_CS16;
 	char const *output_format = SOAPY_SDR_CU8;
 	char *sdr_settings = NULL;
+	double t, eps;
 
 	while ((opt = getopt(argc, argv, "d:f:g:c:a:s:b:n:p:D:SI:F:t:")) != -1) {
 		switch (opt) {
@@ -233,6 +256,7 @@ int main(int argc, char **argv)
 		fbuf = malloc(out_block_size * SoapySDR_formatToSize(SOAPY_SDR_CF32));
 	}
 	size_t input_elem_size = SoapySDR_formatToSize(input_format);
+	size_t output_elem_size = SoapySDR_formatToSize(output_format);
 
 	int tmp_stdout = suppress_stdout_start();
 	// TODO: allow choosing input format, see https://www.reddit.com/r/RTLSDR/comments/4tpxv7/rx_tools_commandline_sdr_tools_for_rtlsdr_bladerf/d5ohfse?context=3
@@ -243,7 +267,12 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	fprintf(stderr, "Using output format: %s (input format %s, %d bytes per element)\n", output_format, input_format, (int)input_elem_size);
+
+	fprintf(stderr, "Using input format: %s (%d input bytes per element)\n", input_format, (int)input_elem_size);
+
+	fprintf(stderr, "Using output format: %s (%d output bytes per element)\n", output_format, (int)output_elem_size);
+
+	fprintf(stderr, "Using buffer sizes: %lld elements, %lld bytes\n", (long long)out_block_size, (long long)out_block_size * output_elem_size); 
 
 #ifndef _WIN32
 	sigact.sa_handler = sighandler;
@@ -315,6 +344,7 @@ int main(int argc, char **argv)
                         exit(1);
                 }
 		suppress_stdout_stop(tmp_stdout);
+		t = dt(); // establish initial timestamp
 		while (!do_exit) {
 			void *buffs[] = {buffer};
 			int flags = 0;
@@ -324,7 +354,14 @@ int main(int argc, char **argv)
 
 			elems_read = SoapySDRDevice_readStream(dev, stream, buffs, out_block_size, &flags, &timeNs, timeoutNs);
 
-			//fprintf(stderr, "readStream ret=%d, flags=%d, timeNs=%lld\n", elems_read, flags, timeNs);
+#if 0
+			fprintf(stderr, "readStream ret=%d, flags=%d, timeNs=%lld\n", elems_read, flags, timeNs);
+#endif
+#if 1
+			t = dt(); 
+                        eps = elems_read/t;
+			fprintf(stderr, "readStream: eRead=%d, Flags=%d, dT=%8.6f eps: %8.1f\n", elems_read, flags, t, eps);
+#endif
 			if (elems_read >= 0) {
 				// elems_read is number of complex pairs of I+Q elements read
 				n_read = elems_read * 2; // one element read is I and Q
@@ -405,9 +442,9 @@ int main(int argc, char **argv)
 	}
 
 	if (do_exit)
-		fprintf(stderr, "\nUser cancel, exiting...\n");
+		fprintf(stderr, "\nNormal exit, exiting...\n");
 	else
-		fprintf(stderr, "\nLibrary error %d, exiting...\n", r);
+		fprintf(stderr, "\nAbnormal exit (error %d), exiting...\n", r);
 
 	if (file != stdout)
 		fclose(file);
