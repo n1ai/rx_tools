@@ -95,6 +95,8 @@ char const *parse_fmt(char const *fmt)
 }
 
 
+#define TS 0
+#if TS > 0
 #include <time.h>
 
 // Returns time in seconds since the last time this function was called
@@ -115,6 +117,7 @@ double dt() {
 
     return dt;
 }
+#endif
 
 #ifdef _WIN32
 BOOL WINAPI
@@ -160,7 +163,9 @@ int main(int argc, char **argv)
 	char const *input_format = SOAPY_SDR_CS16;
 	char const *output_format = SOAPY_SDR_CU8;
 	char *sdr_settings = NULL;
+#if TS > 0
 	double t, eps;
+#endif
 
 	while ((opt = getopt(argc, argv, "d:f:g:c:a:s:b:n:p:D:SI:F:t:")) != -1) {
 		switch (opt) {
@@ -344,7 +349,9 @@ int main(int argc, char **argv)
                         exit(1);
                 }
 		suppress_stdout_stop(tmp_stdout);
+#if TS > 0
 		t = dt(); // establish initial timestamp
+#endif
 		while (!do_exit) {
 			void *buffs[] = {buffer};
 			int flags = 0;
@@ -354,10 +361,10 @@ int main(int argc, char **argv)
 
 			elems_read = SoapySDRDevice_readStream(dev, stream, buffs, out_block_size, &flags, &timeNs, timeoutNs);
 
-#if 0
+#if 0  /* original code */
 			fprintf(stderr, "readStream ret=%d, flags=%d, timeNs=%lld\n", elems_read, flags, timeNs);
 #endif
-#if 1
+#if TS > 0
 			t = dt(); 
                         eps = elems_read/t;
 			fprintf(stderr, "readStream: eRead=%d, Flags=%d, dT=%8.6f eps: %8.1f\n", elems_read, flags, t, eps);
